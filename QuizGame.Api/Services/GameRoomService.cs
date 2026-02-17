@@ -7,6 +7,10 @@ using QuizGame.Api.Hubs;
 using QuizGame.Api.Data;
 using Microsoft.EntityFrameworkCore;
 
+/// <summary>
+/// Manages in-memory game rooms and core game logic, such as room creation,
+/// player management, question flow, scoring, and game history saving. 
+/// </summary>
 public class GameRoomService
 {
 	public readonly Dictionary<string, GameRoom> _rooms = new();
@@ -34,6 +38,13 @@ public class GameRoomService
 
 	}
 
+	/// <summary>
+	/// Creates a new game room and adds the player who created it as the first participant
+	/// </summary>
+	/// <param name="roomName"> The name of the room being created </param>
+	/// <param name="player">An object for the first player, who created the room</param>
+	/// <returns> The created room </returns> 
+
 	public GameRoom CreateRoom(string roomName, Player player)
 	{
 		var room = new GameRoom
@@ -52,7 +63,14 @@ public class GameRoomService
 		return room;
 	}
 
-
+	/// <summary>
+	/// Allows a player to join an existing room
+	/// </summary>
+	/// <param name="roomId">The ID of the room the player will join</param>
+	/// <param name="player">The player who is joining the room</param>
+	/// <returns>
+	/// Null if the room is not found, or the room with the player added, if the room is found
+	/// </returns>
 	public GameRoom? JoinRoom(string roomId, Player player)
 	{
 
@@ -65,6 +83,11 @@ public class GameRoomService
 
 	}
 
+	/// <summary>
+	/// Find a room by its ID
+	/// </summary>
+	/// <param name="roomId">The ID of the room being searched for</param>
+	/// <returns>The room, or null if the room is not found</returns>
 	public GameRoom? GetRoomById(string roomId)
 	{
 
@@ -76,6 +99,12 @@ public class GameRoomService
 
 	}
 
+	/// <summary>
+	/// Allows a player to leave the room
+	/// </summary>
+	/// <param name="roomID">The ID of the room the player is leaving</param>
+	/// <param name="ConnectionID">SignalR's connection ID to that room</param>
+	/// <returns>The removed player, or null if the room or the player is not found</returns>
 	public Player? LeaveRoom(string roomID, string ConnectionID)
 	{
 
@@ -93,6 +122,12 @@ public class GameRoomService
 		return null;
 	}
 
+	/// <summary>
+	/// Starts the game by loading questions for the selected category and setting the GameState to Playing
+	/// </summary>
+	/// <param name="roomId">The ID of the current room</param>
+	/// <param name="category">The category of questions chosen for the game, ex: Math, .NET development, English</param>
+	/// <returns>True if the room is found and is not yet started, False if the room is not found or if the Game has already started</returns>
 	public bool StartGame(string roomId, Categories category)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -111,7 +146,8 @@ public class GameRoomService
 				room.Category = category;
 				return true;
 
-			};
+			}
+			;
 
 		}
 		return false;
@@ -189,9 +225,9 @@ public class GameRoomService
 
 			//Mark players who didn't answer as wrong
 
-			foreach(var player in room.PlayersInThisRoom)
+			foreach (var player in room.PlayersInThisRoom)
 			{
-				if(!results.ContainsKey(player.Name))
+				if (!results.ContainsKey(player.Name))
 				{
 					results[player.Name] = false;
 				}
@@ -214,10 +250,10 @@ public class GameRoomService
 			room.QuestionTimerCts = new CancellationTokenSource();
 		}
 	}
-	
+
 	public async Task SaveGameHistory(string roomId)
 	{
-		if(_rooms.TryGetValue(roomId, out var room))
+		if (_rooms.TryGetValue(roomId, out var room))
 		{
 			var maxScore = room.Scores.Values.Any() ? room.Scores.Values.Max() : 0;
 

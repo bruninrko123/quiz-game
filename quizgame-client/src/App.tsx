@@ -31,6 +31,8 @@ function App() {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [gameHistory, setGameHistory] = useState<any[]>([]);
 
   //mapping of the category names
   const categoryNames: Record<number, string> = {
@@ -143,8 +145,6 @@ function App() {
         .catch((err) => console.error("SignalR connection error:", err));
     }
 
-   
-
     return () => {
       quizHubConnection.off("PlayerJoined");
       quizHubConnection.off("PlayerLeft");
@@ -166,21 +166,21 @@ function App() {
     };
   }, []);
 
-   useEffect(() => {
-     if (timeLeft <= 0) return;
+  useEffect(() => {
+    if (timeLeft <= 0) return;
 
-     const interval = setInterval(() => {
-       setTimeLeft((prev) => {
-         if (prev <= 1) {
-           clearInterval(interval);
-           return 0;
-         }
-         return prev - 1;
-       });
-     }, 1000);
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-     return () => clearInterval(interval);
-   }, [timeLeft]);
+    return () => clearInterval(interval);
+  }, [timeLeft]);
 
   //handle answer submission
   async function handleAnswer(selectedIndex: number) {
@@ -200,8 +200,19 @@ function App() {
     }
   }
 
+  /**
+   *Creates a new game room and joins the caller as the first player
+   *
+
+   */
   async function handleCreateRoom() {
     if (!isConnected) return;
+
+    if (!playerName.trim()) {
+      alert("Please enter your name");
+      return;
+    }
+
     if (!roomName.trim()) {
       alert("Please enter a room name");
       return;
@@ -214,8 +225,17 @@ function App() {
     }
   }
 
+  /**
+   *Allows a player to join an existing room
+   */
   async function handleJoinRoom() {
     if (!isConnected) return;
+
+    if (!playerName.trim()) {
+      alert("Please enter your name");
+      return;
+    }
+
     if (!joinCode.trim()) {
       alert("Please enter a room code");
       return;
@@ -232,12 +252,31 @@ function App() {
     }
   }
 
+
+  /**
+   *Allows the host to start the game
+   */
   async function handleStartGame() {
     if (!isConnected || !isHost) return;
     try {
       await quizHubConnection.invoke("StartGame", roomId, selectedCategory);
     } catch (error) {
       console.error("Failed to start game.", error);
+    }
+  }
+
+  /**
+   *Retrieves past 20 Game Histories
+   *
+   */
+  async function fetchGameHistory() {
+    try {
+      const response = await fetch("http://localhost:5270/api/gamehistory");
+      const data = await response.json();
+      setGameHistory(data);
+      setShowHistory(true);
+    } catch (error) {
+      console.error("Failed to fetch game history", error);
     }
   }
 
@@ -302,6 +341,13 @@ function App() {
                 Join Room
               </button>
             </div>
+            <hr className="border-gray-700" />
+            <button
+              onClick={fetchGameHistory}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded transition"
+            >
+              Game History
+            </button>
           </div>
         </div>
       )}
@@ -372,13 +418,15 @@ function App() {
             <h2 className="text-2xl font-bold text-center">{question.text}</h2>
 
             <div className="text-center">
-              <span className={`text-3xl font-bold ${timeLeft <= 5 ? 'text-red-400' : 'text-green-400'}`}>
+              <span
+                className={`text-3xl font-bold ${timeLeft <= 5 ? "text-red-400" : "text-green-400"}`}
+              >
                 {timeLeft}s
               </span>
               <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
                 <div
-                className={`h-2 rounded-full transition-all duration-1000 ${timeLeft <= 5 ? 'bg-red-500' : 'bg-green-500'}`}
-                style={{width: `${(timeLeft / 15) * 100}%`}}
+                  className={`h-2 rounded-full transition-all duration-1000 ${timeLeft <= 5 ? "bg-red-500" : "bg-green-500"}`}
+                  style={{ width: `${(timeLeft / 15) * 100}%` }}
                 />
               </div>
             </div>
@@ -505,7 +553,55 @@ function App() {
           </div>
         </div>
       )}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6 z-50">
+          <div className="bg-gray-800 rounded-2xl shadow-lg p-8 w-full max-w-lg max-h[80vh] overflow-y-auto space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Game History</h2>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="text-gray-400 hover:text-white text-xl"
+              >
+                X
+              </button>
+            </div>
 
+            {gameHistory.length === 0 && (
+              <p className="text-center">No Game Played yet.</p>
+            )}
+
+            {gameHistory.map((game, i) => (
+              <div key={i} className="bg-gray-700 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="font-semibold">{game.roomName}</span>
+                  <span className="text-gray-400 text-sm">
+                    {new Date(game.playedAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400">
+                  {categoryNames[game.category]} - {game.totalQuestions}{" "}
+                  questions
+                </p>
+                <ul className="space-y-1">
+                  {game.playerResults.map((p: any, j: number) => (
+                    <li
+                      key={j}
+                      className={`flex justify-between rounded px-3 py-1 text-sm ${
+                        p.isWinner
+                          ? "bg-yellow-900/50 text-yellow-300"
+                          : "bg-gray-600"
+                      }`}
+                    >
+                      <span>{p.name}</span>
+                      <span>{p.score}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {!isConnected && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-900/80 text-red-200 px-4 py-2 rounded-lg">
           Connecting to game server...

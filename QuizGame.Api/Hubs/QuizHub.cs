@@ -28,7 +28,7 @@ public class QuizHub : Hub
 
     }
 
-  
+
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
@@ -63,15 +63,15 @@ public class QuizHub : Hub
                                 shouldProcess = true;
                             }
                         }
-                    if (shouldProcess)
-                    {
-                        await ProcessRoundEnd(roomId);
-                    }
+                        if (shouldProcess)
+                        {
+                            await ProcessRoundEnd(roomId);
+                        }
                     }
                 }
-                
+
                 // If room is now empty, clean up
-                if(room?.PlayersInThisRoom.Count == 0)
+                if (room?.PlayersInThisRoom.Count == 0)
                 {
                     room.QuestionTimerCts?.Cancel();
                     room.QuestionTimerCts?.Dispose();
@@ -84,9 +84,15 @@ public class QuizHub : Hub
 
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
         }
-            await base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(exception);
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="roomName"></param>
+    /// <param name="playerName"></param>
+    /// <returns></returns>
     public async Task CreateRoom(string roomName, string playerName)
     {
         var player = new Player
@@ -118,6 +124,13 @@ public class QuizHub : Hub
             JoinedAt = DateTime.UtcNow,
 
         };
+
+        var existingRoom = _roomService.GetRoomById(roomId);
+        if(existingRoom != null && existingRoom.PlayersInThisRoom.Any(p => p.Name == playerName))
+        {
+            await Clients.Caller.SendAsync("Error", "A player with that name is already in the room");
+            return;
+        }
 
         var room = _roomService.JoinRoom(roomId, player);
 
