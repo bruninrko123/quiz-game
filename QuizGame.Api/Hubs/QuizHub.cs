@@ -16,12 +16,15 @@ public class QuizHub : Hub
     // Track which room each connection is in (static = shared across all hub instances)
     private static readonly Dictionary<string, string> _connectionToRoom = new();
 
+    private readonly IHubContext<QuizHub> _hubContext;
+
     //constructor
-    public QuizHub( GameRoomService roomService, QuizDbContext dbContext)
+    public QuizHub( GameRoomService roomService, QuizDbContext dbContext, IHubContext<QuizHub> hubContext)
     {
         
         _roomService = roomService;
         _dbContext = dbContext;
+        _hubContext = hubContext;
 
     }
 
@@ -37,6 +40,44 @@ public class QuizHub : Hub
             if (player != null)
             {
                 await Clients.Group(roomId).SendAsync("PlayerLeft", player.Name);
+
+                //Check if this disconnect means all remaining players have answered
+                var room = _roomService.GetRoomById(roomId);
+                if (room != null && room.RoomState == GameState.Playing)
+                {
+                    // Remove disconnected player's answer if they had one
+                    room.CurrentAnswers.Remove(player.Name);
+
+                    // If remaining players have all answered, evaluate immediately
+                    if (room.PlayersInThisRoom.Count > 0 &&
+                    room.CurrentAnswers.Count == room.PlayersInThisRoom.Count)
+                    {
+                        room.QuestionTimerCts?.Cancel();
+
+                        bool shouldProcess = false;
+                        lock (room.RoundLock)
+                        {
+                            if (!room.RoundEvaluated)
+                            {
+                                room.RoundEvaluated = true;
+                                shouldProcess = true;
+                            }
+                        }
+                    if (shouldProcess)
+                    {
+                        await ProcessRoundEnd(roomId);
+                    }
+                    }
+                }
+                
+                // If room is now empty, clean up
+                if(room?.PlayersInThisRoom.Count == 0)
+                {
+                    room.QuestionTimerCts?.Cancel();
+                    room.QuestionTimerCts?.Dispose();
+                    _roomService._rooms.Remove(roomId);
+                }
+
             }
 
             _connectionToRoom.Remove(Context.ConnectionId);
@@ -113,9 +154,11 @@ public class QuizHub : Hub
 
         if (question != null)
         {
+            _roomService.ResetRoundState(roomId);
             await Clients.Group(roomId).SendAsync("GameStarted");
             await Clients.Group(roomId).SendAsync("ReceiveQuestion", question.Id, question.Text, question.Options);
-
+            await Clients.Group(roomId).SendAsync("TimerStarted", 15);
+            StartQuestionTimer(roomId);
 
         }
     }
@@ -142,32 +185,102 @@ public class QuizHub : Hub
 
         if (AllPlayersAnswered)
         {
-            var RoundResults = _roomService.EvaluateRound(roomId);
-
-            await Clients.Group(roomId).SendAsync("RoundResults", RoundResults);
-
             var room = _roomService.GetRoomById(roomId);
+            if (room == null) return;
 
-            await Clients.Group(roomId).SendAsync("UpdateScores", room?.Scores);
+            //Cancel the timer (everyone answered so you can stop it)
+            room.QuestionTimerCts?.Cancel();
 
-            var nextQuestion = _roomService.NextQuestion(roomId);
+            lock (room.RoundLock)
+            {
+                if (room.RoundEvaluated) return;
+                room.RoundEvaluated = true;
+            }
 
+            await ProcessRoundEnd(roomId);
+        }
+
+    }
+
+    private async Task ProcessRoundEnd(string roomId)
+    {
+        var room = _roomService.GetRoomById(roomId);
+        if (room == null) return;
+
+        var roundResults = _roomService.EvaluateRound(roomId);
+
+        await Clients.Group(roomId).SendAsync("RoundResults", roundResults);
+        await Clients.Group(roomId).SendAsync("UpdateScores", room.Scores);
+
+        var nextQuestion = _roomService.NextQuestion(roomId);
 
         if (nextQuestion != null)
         {
-            await Task.Delay(5000); // wait 5 seconds before sending the next questions so that players have time to see the results
+            await Task.Delay(5000);
+            _roomService.ResetRoundState(roomId);
             await Clients.Group(roomId).SendAsync("ReceiveQuestion", nextQuestion.Id, nextQuestion.Text, nextQuestion.Options);
+            await Clients.Group(roomId).SendAsync("TimerStarted", 15);
+            StartQuestionTimer(roomId);
         }
         else
-            {
-                var finalScores = _roomService.GetRoomById(roomId)?.Scores;
-            await Clients.Group(roomId).SendAsync("GameOver", finalScores);
+        {
+            await Clients.Group(roomId).SendAsync("GameOver", room.Scores);
+            await _roomService.SaveGameHistory(roomId);
             _roomService.ResetGame(roomId);
         }
-        }
+    }
+    
+    private void StartQuestionTimer(string roomId)
+    {
+        var room = _roomService.GetRoomById(roomId);
+        if (room == null) return;
 
-        
+        var cts = room.QuestionTimerCts;
+        if (cts == null) return;
 
+        var token = cts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(15000, token);
+
+                
+                lock (room.RoundLock)
+                {
+                    if (room.RoundEvaluated) return;
+                    room.RoundEvaluated = true;
+                }
+
+                var roundResults = _roomService.EvaluateRound(roomId);
+
+                await _hubContext.Clients.Group(roomId).SendAsync("RoundResults", roundResults);
+                await _hubContext.Clients.Group(roomId).SendAsync("UpdateScores", room.Scores);
+
+                var nextQuestion = _roomService.NextQuestion(roomId);
+
+                if (nextQuestion != null)
+                {
+                    await Task.Delay(5000);
+                    _roomService.ResetRoundState(roomId);
+                    await _hubContext.Clients.Group(roomId).SendAsync("ReceiveQuestion", nextQuestion.Id, nextQuestion.Text, nextQuestion.Options);
+                    await _hubContext.Clients.Group(roomId).SendAsync("TimerStarted", 15);
+                    StartQuestionTimer(roomId);
+                }
+                else
+                {
+                    await _hubContext.Clients.Group(roomId).SendAsync("GameOver", room.Scores);
+                    await _roomService.SaveGameHistory(roomId);
+                    _roomService.ResetGame(roomId);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // Normal — all players answered before timer expired
+                //Meaning we should not have any errors displayed here
+            }
+        });
     }
 }
 

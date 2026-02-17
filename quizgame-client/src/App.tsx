@@ -30,6 +30,7 @@ function App() {
   > | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
 
   //mapping of the category names
   const categoryNames: Record<number, string> = {
@@ -105,11 +106,16 @@ function App() {
     quizHubConnection.on("RoundResults", (roundResutlts) => {
       console.log(roundResutlts);
       setRoundResults(roundResutlts);
+      setTimeLeft(0);
     });
 
     quizHubConnection.on("UpdateScores", (scores) => {
       console.log(scores);
       setScores(scores);
+    });
+
+    quizHubConnection.on("TimerStarted", (seconds: number) => {
+      setTimeLeft(seconds);
     });
 
     // Error from server
@@ -137,26 +143,44 @@ function App() {
         .catch((err) => console.error("SignalR connection error:", err));
     }
 
+   
+
     return () => {
-    
       quizHubConnection.off("PlayerJoined");
       quizHubConnection.off("PlayerLeft");
       quizHubConnection.off("PlayerList");
-      quizHubConnection.off("RoomCreated"); 
-      quizHubConnection.off("RoomJoined"); 
-      quizHubConnection.off("GameStarted"); 
+      quizHubConnection.off("RoomCreated");
+      quizHubConnection.off("RoomJoined");
+      quizHubConnection.off("GameStarted");
       quizHubConnection.off("ReceiveQuestion");
-      quizHubConnection.off("Error"); 
+      quizHubConnection.off("Error");
       quizHubConnection.off("ReceiveCategories");
       quizHubConnection.off("GameOver");
       quizHubConnection.off("RoundResults");
       quizHubConnection.off("UpdateScores");
+      quizHubConnection.off("TimerStarted");
 
       // 👇 manually remove lifecycle callbacks
       quizHubConnection.onclose(() => {});
       quizHubConnection.onreconnected(() => {});
     };
   }, []);
+
+   useEffect(() => {
+     if (timeLeft <= 0) return;
+
+     const interval = setInterval(() => {
+       setTimeLeft((prev) => {
+         if (prev <= 1) {
+           clearInterval(interval);
+           return 0;
+         }
+         return prev - 1;
+       });
+     }, 1000);
+
+     return () => clearInterval(interval);
+   }, [timeLeft]);
 
   //handle answer submission
   async function handleAnswer(selectedIndex: number) {
@@ -346,6 +370,18 @@ function App() {
         <div className="flex flex-col items-center justify-center min-h-screen p-6">
           <div className="bg-gray-800 rounded-2xl shadow-lg p-8 w-full max-w-lg space-y-4">
             <h2 className="text-2xl font-bold text-center">{question.text}</h2>
+
+            <div className="text-center">
+              <span className={`text-3xl font-bold ${timeLeft <= 5 ? 'text-red-400' : 'text-green-400'}`}>
+                {timeLeft}s
+              </span>
+              <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
+                <div
+                className={`h-2 rounded-full transition-all duration-1000 ${timeLeft <= 5 ? 'bg-red-500' : 'bg-green-500'}`}
+                style={{width: `${(timeLeft / 15) * 100}%`}}
+                />
+              </div>
+            </div>
 
             <div className="space-y-3 mt-6">
               {question.options.map((opt, i) => (

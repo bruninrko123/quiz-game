@@ -14,4 +14,12 @@ public class GameRoom
     public Dictionary<string, int> CurrentAnswers = new();
 
     public Dictionary<string, int> Scores = new();
+
+    public CancellationTokenSource? QuestionTimerCts { get; set; }
+
+    public readonly object RoundLock = new();
+
+    public bool RoundEvaluated { get; set; } = false;
+
+    public Categories Category { get; set; }    
 }

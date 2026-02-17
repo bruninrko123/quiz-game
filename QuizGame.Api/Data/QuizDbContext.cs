@@ -14,6 +14,9 @@ public class QuizDbContext : DbContext
     // DbSet goes HERE - outside the constructor, inside the class
     public DbSet<Question> Questions { get; set; }
 
+    //Registering the GameHistory in the DbContext
+    public DbSet<GameHistory> GameHistories { get; set; }
+
     // This method configures the database model
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

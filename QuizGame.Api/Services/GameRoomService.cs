@@ -108,6 +108,7 @@ public class GameRoomService
 
 				room.CurrentQuestionIndex = 0;
 				room.RoomState = GameState.Playing;
+				room.Category = category;
 				return true;
 
 			};
@@ -165,7 +166,7 @@ public class GameRoomService
 		}
 		return false;
 	}
-	
+
 	public Dictionary<string, bool> EvaluateRound(string roomId)
 	{
 		var results = new Dictionary<string, bool>();
@@ -185,9 +186,62 @@ public class GameRoomService
 
 				results[answer.Key] = (answer.Value == currentQuestionCorrectOption);
 			}
+
+			//Mark players who didn't answer as wrong
+
+			foreach(var player in room.PlayersInThisRoom)
+			{
+				if(!results.ContainsKey(player.Name))
+				{
+					results[player.Name] = false;
+				}
+			}
+
 			room.CurrentAnswers.Clear();
-				return results;
+			return results;
 		}
 		return results;
 	}
+
+	public void ResetRoundState(string roomId)
+	{
+		if (_rooms.TryGetValue(roomId, out var room))
+		{
+			room.CurrentAnswers.Clear();
+			room.RoundEvaluated = false;
+			room.QuestionTimerCts?.Cancel();
+			room.QuestionTimerCts?.Dispose();
+			room.QuestionTimerCts = new CancellationTokenSource();
+		}
+	}
+	
+	public async Task SaveGameHistory(string roomId)
+	{
+		if(_rooms.TryGetValue(roomId, out var room))
+		{
+			var maxScore = room.Scores.Values.Any() ? room.Scores.Values.Max() : 0;
+
+			var playerResults = room.PlayersInThisRoom.Select(p => new PlayerResult
+			{
+				Name = p.Name,
+				Score = room.Scores.GetValueOrDefault(p.Name, 0),
+				IsWinner = room.Scores.GetValueOrDefault(p.Name, 0) == maxScore && maxScore > 0
+			}).ToList();
+
+			var history = new GameHistory
+			{
+				RoomName = room.RoomName,
+				Category = room.Category,
+				PlayedAt = DateTime.UtcNow,
+				TotalQuestions = room.QuestionsInThisRoom.Count,
+				PlayerResults = playerResults,
+			};
+
+			using var scope = _scopeFactory.CreateScope();
+			var db = scope.ServiceProvider.GetRequiredService<QuizDbContext>();
+			db.GameHistories.Add(history);
+			await db.SaveChangesAsync();
+		}
+	}
+
 }
