@@ -6,9 +6,12 @@ using QuizGame.Api.Models;
 using QuizGame.Api.Data;
 using Microsoft.EntityFrameworkCore;
 
+/// <summary>
+/// Handles the real-time interactions among players using SignalR
+/// </summary>
 public class QuizHub : Hub
 {
-   
+
     private readonly GameRoomService _roomService;
 
     private QuizDbContext _dbContext;
@@ -19,9 +22,9 @@ public class QuizHub : Hub
     private readonly IHubContext<QuizHub> _hubContext;
 
     //constructor
-    public QuizHub( GameRoomService roomService, QuizDbContext dbContext, IHubContext<QuizHub> hubContext)
+    public QuizHub(GameRoomService roomService, QuizDbContext dbContext, IHubContext<QuizHub> hubContext)
     {
-        
+
         _roomService = roomService;
         _dbContext = dbContext;
         _hubContext = hubContext;
@@ -29,7 +32,14 @@ public class QuizHub : Hub
     }
 
 
-
+    /// <summary>
+    /// Called by SignalR when a client disconnects. Remove the diconnected player from their room
+    /// </summary>
+    /// <param name="exception">The exception that caused the disconnection, or null if the player disconnected gracefully</param>
+    /// <remarks>
+    /// Finishes the round if all the other players have answered, calls: <see cref="ProcessRoundEnd"/>
+    /// Cancels the timer and removes the room from memory if the room is empty after the player leaves
+    /// </remarks>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         if (_connectionToRoom.TryGetValue(Context.ConnectionId, out var roomId))
@@ -88,11 +98,14 @@ public class QuizHub : Hub
     }
 
     /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="roomName"></param>
-    /// <param name="playerName"></param>
-    /// <returns></returns>
+/// Creates a new game room and adds the caller as the first player and host.
+/// </summary>
+/// <param name="roomName">The display name for the room.</param>
+/// <param name="playerName">The name of the player creating the room.</param>
+/// <remarks>
+/// This method is called by SignalR.
+/// Emits <c>RoomCreated(roomId, roomName)</c> and <c>PlayerList(PlayersInThisRoom)</c> to the caller.
+/// </remarks>
     public async Task CreateRoom(string roomName, string playerName)
     {
         var player = new Player
@@ -115,6 +128,16 @@ public class QuizHub : Hub
 
     }
 
+    /// <summary>
+    /// Allows a player to join an existing room using the roomId.
+    /// </summary>
+    /// <param name="roomId">The ID of the room the player wants to join</param>
+    /// <param name="playerName">The name of the player, which he chose</param>
+    /// <remarks>
+    /// This method is called by SignalR
+    /// Emits <c>PlayerJoined(playerName) to the group</c>, and <c>PlayersList(room.PlayersInThisRoom)</c> and <c> RoomJoined(room.RoomId, room.RoomName) to the caller</c> 
+    /// Emits <c>Error</c> if the room is not found or another player has the same name in the room.
+    /// </remarks>
     public async Task JoinRoom(string roomId, string playerName)
     {
         var player = new Player
@@ -126,7 +149,7 @@ public class QuizHub : Hub
         };
 
         var existingRoom = _roomService.GetRoomById(roomId);
-        if(existingRoom != null && existingRoom.PlayersInThisRoom.Any(p => p.Name == playerName))
+        if (existingRoom != null && existingRoom.PlayersInThisRoom.Any(p => p.Name == playerName))
         {
             await Clients.Caller.SendAsync("Error", "A player with that name is already in the room");
             return;
@@ -153,6 +176,16 @@ public class QuizHub : Hub
 
     }
 
+    /// <summary>
+    /// Allows the host to start the game.
+    /// </summary>
+    /// <param name="roomId">The Id of the room where the game will be started</param>
+    /// <param name="category">The Category of the questions chosen (ex: Math, .NET development, English)</param>
+    /// <remarks>
+    /// This method is called by SignalR
+    /// Emits <c>GameStarted</c>, <c>ReceiveQuestion(question.Id, question.Text, question.Options)</c> and <c>TimerStarted(15)</c> to the group (the room)
+    /// Emits <c>Error</c> if the game fails to start
+    /// </remarks>
     public async Task StartGame(string roomId, Categories category)
     {
         var started = _roomService.StartGame(roomId, category);
@@ -176,6 +209,13 @@ public class QuizHub : Hub
         }
     }
 
+    /// <summary>
+    /// Get the categories of questions available (ex: Math, .NET development, English)
+    /// </summary>
+    /// <remarks>
+    /// This method is called by signalR
+    /// Emits <c>ReceiveCategories(categories)</c> to the caller
+    /// </remarks>
     public async Task GetCategories()
     {
         var categories = await _dbContext.Questions
@@ -186,6 +226,16 @@ public class QuizHub : Hub
         await Clients.Caller.SendAsync("ReceiveCategories", categories);
     }
 
+    /// <summary>
+    /// Allows a player to submit his/her answer
+    /// </summary>
+    /// <param name="roomId">The Id of the room the player is in</param>
+    /// <param name="questionId">The Id of the question the player answered</param>
+    /// <param name="selectedOptionIndex">The option the player selected as an answer</param>
+    /// <param name="playerName">The name of the player who is submitting an answer</param>
+    ///<remarks>
+    /// If all players have answered, cancel the timer and calls <see cref="ProcessRoundEnd"/> to evaluate the round
+    /// </remarks>
     public async Task SubmitAnswer(string roomId, int questionId, int selectedOptionIndex, string playerName)
     {
         // get the current question
@@ -215,6 +265,17 @@ public class QuizHub : Hub
 
     }
 
+
+
+    /// <summary>
+    /// Evaluates the current round and advances the game to the next question or ends the game.
+    /// </summary>
+    /// <param name="roomId">The ID of the room to process the round end for.</param>
+    /// <remarks>
+    /// Emits <c>RoundResults(correct/incorrect)</c> and <c>UpdateScores(scores)</c> to the group.
+    /// If there are more questions, waits 5 seconds then emits <c>ReceiveQuestion(question information)</c> and starts the timer <c>TimerStarted(15)</c>.
+    /// If all questions are exhausted, emits <c>GameOver(scores)</c>, saves the game history to the database and resets the game
+    /// </remarks>
     private async Task ProcessRoundEnd(string roomId)
     {
         var room = _roomService.GetRoomById(roomId);
@@ -242,7 +303,17 @@ public class QuizHub : Hub
             _roomService.ResetGame(roomId);
         }
     }
-    
+
+    /// <summary>
+    /// Starts a 15-second fire-and-forget timer for the current question.
+    /// </summary>
+    /// <param name="roomId">The ID of the room the timer is running for.</param>
+    /// <remarks>
+    /// Runs in a background thread using <see cref="Task.Run"/>. Uses <see cref="IHubContext{THub}"/>
+    /// to send messages since it runs outside the SignalR hub lifecycle.
+    /// If the timer expires before all players answer, evaluates the round and advances the game.
+    /// Cancelled silently via <see cref="CancellationTokenSource"/> if all players answer early.
+    /// </remarks>
     private void StartQuestionTimer(string roomId)
     {
         var room = _roomService.GetRoomById(roomId);
@@ -259,7 +330,7 @@ public class QuizHub : Hub
             {
                 await Task.Delay(15000, token);
 
-                
+
                 lock (room.RoundLock)
                 {
                     if (room.RoundEvaluated) return;

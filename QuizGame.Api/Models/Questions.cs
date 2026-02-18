@@ -3,7 +3,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace QuizGame.Api.Models;
 
-
+/// <summary>
+/// The available question categories for a game.
+/// </summary>
 public enum Categories
 {
     Math,
@@ -12,21 +14,36 @@ public enum Categories
     DotNetDevelopment
 }
 
+/// <summary>
+/// Represents a quiz question stored in the database.
+/// </summary>
 public class Question
 {
-    [Key]  // Marks this as the primary key
+    /// <summary>
+    /// The primary key for this question in the database.
+    /// </summary>
+    [Key]
     public int Id { get; set; }
 
-    [Required] // NOT NULL in database
+    /// <summary>
+    /// The question text displayed to players.
+    /// </summary>
+    [Required]
     public string Text { get; set; } = "";
 
-    [Column(TypeName = "jsonb")]  // Store as JSON in PostgreSQL
+    /// <summary>
+    /// The list of answer options displayed to players. Stored as JSONB in PostgreSQL.
+    /// </summary>
+    [Column(TypeName = "jsonb")]
     public List<string> Options { get; set; } = new();
+
+    /// <summary>
+    /// The zero-based index of the correct answer in <see cref="Options"/>.
+    /// </summary>
     public int CorrectOptionIndex { get; set; }
 
+    /// <summary>
+    /// The category this question belongs to (ex: Math, .NET development, English).
+    /// </summary>
     public Categories Category { get; set; }
-
-    
 }
-
-

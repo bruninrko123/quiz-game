@@ -6,6 +6,10 @@ namespace QuizGame.Api.Controllers;
 
 
 
+/// <summary>
+/// REST API controller for retrieving game history records.
+/// Accessible at <c>GET /api/gamehistory</c>.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class GameHistoryController : ControllerBase
@@ -17,6 +21,12 @@ public class GameHistoryController : ControllerBase
         _dbContext = dbContext;
     }
 
+    /// <summary>
+    /// Returns the 20 most recent completed games, ordered by most recently played.
+    /// </summary>
+    /// <returns>
+    /// 200 OK with a list of <see cref="QuizGame.Api.Models.GameHistory"/> records.
+    /// </returns>
     [HttpGet]
     public async Task<IActionResult> GetHistory()
     {

@@ -154,7 +154,14 @@ public class GameRoomService
 	}
 
 
-
+	/// <summary>
+	/// Gets the current round's question
+	/// </summary>
+	/// <param name="roomId">The ID of the room  to get the question for</param>
+	/// <returns>
+	/// The current question of the room
+	/// Null if the room is not found, if the game is not in progress or if the questions finished
+	/// </returns>
 	public Question? GetCurrentQuestion(string roomId)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -168,6 +175,11 @@ public class GameRoomService
 		return null;
 	}
 
+	/// <summary>
+	/// Gets the next question in the room
+	/// </summary>
+	/// <param name="roomId">the ID of the room we are getting questions for</param>
+	/// <returns>A call to <see cref="GetCurrentQuestion"/> if the room is found, or null if the room is not found </returns>
 	public Question? NextQuestion(string roomId)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -178,6 +190,7 @@ public class GameRoomService
 		return null;
 	}
 
+
 	public void ResetGame(string roomId)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -187,6 +200,15 @@ public class GameRoomService
 		}
 	}
 
+	/// <summary>
+	/// Records a player's answer for the current question and checks if all players have answered
+	/// </summary>
+	/// <param name="roomId">The ID of the room being evaluated</param>
+	/// <param name="playerName">The Name of the player who answered</param>
+	/// <param name="selectedOptionIndex">The Id of the option the player selected</param>
+	/// <returns>True if all players have answered  and <see cref="EvaluateRound"/>  should be called
+	/// False if not all players have answered
+	/// </returns>
 	public bool RecordAnswer(string roomId, string playerName, int selectedOptionIndex)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -202,7 +224,14 @@ public class GameRoomService
 		}
 		return false;
 	}
-
+	
+	/// <summary>
+	/// Sets each player's scores for the current round. Mark players who didn't answer as wrong answer
+	/// </summary>
+	/// <param name="roomId">The ID of the room you are evaluating</param>
+	/// <returns>All player's answers, true if correct, false if incorrect 
+	/// Returns empty results if the room is not found
+	/// </returns>
 	public Dictionary<string, bool> EvaluateRound(string roomId)
 	{
 		var results = new Dictionary<string, bool>();
@@ -239,6 +268,11 @@ public class GameRoomService
 		return results;
 	}
 
+
+	/// <summary>
+	/// Resets the round information so that the next round starts clear. Called after <see cref="EvaluateRound"/>
+	/// </summary>
+	/// <param name="roomId">The ID of the room we are reseting the round for</param>
 	public void ResetRoundState(string roomId)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
@@ -251,6 +285,11 @@ public class GameRoomService
 		}
 	}
 
+	/// <summary>
+	/// Saves the Game results to the database, including player names and results
+	/// </summary>
+	/// <param name="roomId">The Id of the room we are saving information from</param>
+	
 	public async Task SaveGameHistory(string roomId)
 	{
 		if (_rooms.TryGetValue(roomId, out var room))
