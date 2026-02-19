@@ -271,7 +271,7 @@ function App() {
    */
   async function fetchGameHistory() {
     try {
-      const response = await fetch("http://localhost:5270/api/gamehistory");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/gamehistory`);
       const data = await response.json();
       setGameHistory(data);
       setShowHistory(true);
