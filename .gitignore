@@ -21,3 +21,9 @@ Desktop.ini
 *.db
 *.db-shm
 *.db-wal
+
+
+#test results
+
+TestResults/
+coveragereport/
