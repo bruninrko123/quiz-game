@@ -51,7 +51,9 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173") // <-- your frontend URL
+            .WithOrigins(
+    "http://localhost:5173",
+    "https://quiz-game-k7hm.onrender.com")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
